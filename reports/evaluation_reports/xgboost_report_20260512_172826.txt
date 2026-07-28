@@ -1,0 +1,35 @@
+Model evaluation report
+Model: XGBOOST
+Timestamp: 2026-05-12 17:28:26
+Hyperparameter Tuning: No
+
+Parameters:
+  n_estimators: 150
+  max_depth: 7
+  learning_rate: 0.09
+  subsample: 0.9
+  colsample_bytree: 0.8
+  reg_alpha: 0.1
+  reg_lambda: 1.0
+
+Validation set results:
+  R2:   0.9476
+  MAE:  0.15
+  RMSE: 0.25
+
+Test set results:
+  R2:   0.9592
+  MAE:  0.15
+  RMSE: 0.22
+
+Top 10 Features:
+   1. Market_Segment
+   2. Horsepower
+   3. Gearbox
+   4. Vehicle_Age
+   5. Classic_Vehicle
+   6. Annual_Distance_Avg
+   7. Condition
+   8. Brand
+   9. Fuel_Type
+  10. Doors

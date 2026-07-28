@@ -1,0 +1,33 @@
+Model evaluation report
+Model: CATBOOST
+Timestamp: 2026-06-01 09:10:46
+Hyperparameter Tuning: No
+
+Parameters:
+  iterations: 500
+  depth: 6
+  learning_rate: 0.03
+  l2_leaf_reg: 3
+  subsample: 0.8
+
+Validation set results:
+  R2:     0.9238
+  MAE:    10786.60
+  RMSE:   24634.60
+
+Test set results:
+  R2:     0.9070
+  MAE:    11288.80
+  RMSE:   28064.85
+
+Top 10 Features:
+   1. Horsepower
+   2. Brand
+   3. Market_Segment
+   4. Annual_Distance_Avg
+   5. Vehicle_Age
+   6. Model
+   7. Doors
+   8. Seats
+   9. Body
+  10. Country

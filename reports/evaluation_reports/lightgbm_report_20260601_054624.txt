@@ -1,0 +1,37 @@
+Model evaluation report
+Model: LIGHTGBM
+Timestamp: 2026-06-01 05:37:47
+Transform: log1p
+Hyperparameter Tuning: No
+
+Parameters:
+  n_estimators: 500
+  max_depth: 10
+  learning_rate: 0.05
+  num_leaves: 31
+  subsample: 0.8
+  colsample_bytree: 0.8
+  reg_alpha: 0.1
+  reg_lambda: 0.1
+
+Validation set results:
+  R2:   0.5575
+  MAE:  10,648 EUR
+  RMSE: 98,679 EUR
+
+Test set results:
+  R2:   0.6667
+  MAE:  10,242 EUR
+  RMSE: 86,955 EUR
+
+Top 10 Features:
+   1. Horsepower
+   2. Model
+   3. Vehicle_Age
+   4. Brand
+   5. Annual_Distance_Avg
+   6. Country
+   7. Body
+   8. Fuel_Type
+   9. Seats
+  10. Color
