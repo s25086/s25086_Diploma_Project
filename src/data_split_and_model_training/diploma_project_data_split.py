@@ -1,6 +1,6 @@
 """
-Data preparation and splitting.
-Location: /opt/airflow/src/diploma_project_data_split.py
+Przetworzenie i podział danych
+Lokalizacja: /opt/airflow/src/diploma_project_data_split.py
 """
 
 import pandas as pd
@@ -13,7 +13,7 @@ def split_data(input_path, output_dir):
     print(f"Loading data from {input_path}...")
     df = pd.read_csv(input_path)
 
-    # Auto coding string columns
+    # Kodowanie kolumn kategorycznych
     categorical_cols = ['Brand', 'Model', 'Body', 'Country', 'Condition', 'Fuel_Type',
                         'Gearbox', 'Color', 'Non_Smoker_Vehicle', 'Seller',
                         'Market_Segment', 'Classic_Vehicle']
@@ -22,13 +22,13 @@ def split_data(input_path, output_dir):
         if col in df.columns:
             df[col] = df[col].astype('category').cat.codes
 
-    # Setting target column and columns to remove from the dataset
+    # Ustawienie kolumny docelowej i kolumn do usunięcia
     y = df['Price']
 
     cols_to_drop = ['Price', 'Year', 'Mileage']
     X = df.drop(columns=[c for c in cols_to_drop if c in df.columns])
 
-    # Separating datasets for train, test, validation
+    # Podział zbioru danych na train, test, validation
     X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=0.30, random_state=42)
     X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.50, random_state=42)
 

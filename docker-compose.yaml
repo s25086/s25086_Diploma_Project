@@ -340,5 +340,22 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
+  # Standalone Streamlit dashboard — its own lightweight image, not part of airflow-common,
+  # so it doesn't share (or bloat/conflict with) the Airflow containers' dependencies.
+  streamlit:
+    build: ./streamlit
+    ports:
+      - "8501:8501"
+    volumes:
+      - ${AIRFLOW_PROJ_DIR:-.}/reports:/app/reports
+      - ${AIRFLOW_PROJ_DIR:-.}/models:/app/models
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+      
 volumes:
   postgres-db-volume:

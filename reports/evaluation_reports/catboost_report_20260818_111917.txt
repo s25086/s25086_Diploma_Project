@@ -1,0 +1,39 @@
+Model evaluation report
+Model: CATBOOST
+Timestamp: 2026-08-18 11:19:17
+Hyperparameter Tuning: No
+
+Early stopping:
+  Zaplanowana liczba drzew:      3000
+  Faktycznie wykorzystana:       2090
+  Cierpliwość (patience_rounds): 50
+  Zatrzymano wcześniej:          Tak
+
+Parameters:
+  iterations: 3000
+  depth: 6
+  learning_rate: 0.03
+  l2_leaf_reg: 3
+  subsample: 0.8
+
+Validation set results:
+  R2:     0.9246
+  MAE:    10124.36
+  RMSE:   24026.20
+
+Test set results:
+  R2:     0.9267
+  MAE:    10001.28
+  RMSE:   23092.76
+
+Top 10 Features:
+   1. Horsepower
+   2. Market_Segment
+   3. Brand
+   4. Annual_Distance_Avg
+   5. Model
+   6. Body
+   7. Fuel_Type
+   8. Country
+   9. Seats
+  10. Doors

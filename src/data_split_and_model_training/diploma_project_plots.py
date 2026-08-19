@@ -16,9 +16,10 @@ def _eur_formatter(x, pos):
     return f"{x:.0f}"
 
 
-def plot_prediction_analysis(model, X_test, y_test, model_type, save_dir="/opt/airflow/reports/evaluation_reports"):
-    # Function is drawing charts that shows graphically prediction error
-    # Charts are being placed in evaluation_reports inside reports folder
+def plot_prediction_analysis(model, X_test, y_test, model_type,
+                             save_dir="/opt/airflow/reports/evaluation_reports"):
+    # Funkcja do rysowania wykresów do mierzenia precyzyjności modeli
+    # Wykresy znajdują się w evaluation_report
 
     y_pred = model.predict(X_test)
     y_true = np.array(y_test)
@@ -86,4 +87,54 @@ def plot_prediction_analysis(model, X_test, y_test, model_type, save_dir="/opt/a
     fig.savefig(path, bbox_inches='tight', dpi=150)
     plt.close(fig)
     print(f"Wykres zapisany: {path}")
+    return path
+
+# Wyciąganie historii błędu (per iteracja) zapisanej wewnątrz obiektu modelu
+# przez każdą z bibliotek, CZYLI każda robi to nieco inaczej stąd osobne lambdy.
+_LEARNING_CURVE_EXTRACTORS = {
+    "xgboost":  lambda m: (m.evals_result()['validation_0']['rmse'],
+                            m.evals_result()['validation_1']['rmse']),
+    "lightgbm": lambda m: (m.evals_result_['training']['rmse'],
+                            m.evals_result_['valid_1']['rmse']),
+    "catboost": lambda m: (m.get_evals_result()['learn']['RMSE'],
+                            m.get_evals_result()['validation']['RMSE']),
+}
+
+def plot_learning_curve(model, model_type, save_dir="/opt/airflow/reports/evaluation_reports"):
+    # Krzywa uczenia: błąd (RMSE) na zbiorze treningowym i walidacyjnym
+    # w kolejnych iteracjach boostingu, z zaznaczonym punktem early stopping.
+    # Dotyczy wyłącznie modeli boostingowych (xgboost, catboost, lightgbm) -
+    # Random Forest nie trenuje się iteracyjnie, więc taka krzywa nie ma sensu.
+    extractor = _LEARNING_CURVE_EXTRACTORS.get(model_type)
+    if extractor is None:
+        return None
+
+    train_curve, val_curve = extractor(model)
+    # Minimum liczymy bezpośrednio z krzywej walidacyjnej, niezależnie od
+    # konwencji indeksowania danej biblioteki (część z nich liczy od 0,
+    # część już podaje liczbę drzew) - dzięki temu punkt na wykresie
+    # zawsze trafia we właściwe miejsce.
+    best_iter = int(np.argmin(val_curve))
+
+    Path(save_dir).mkdir(parents=True, exist_ok=True)
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.plot(range(len(train_curve)), train_curve, color='steelblue',
+             linewidth=1.5, label='Zbiór treningowy')
+    ax.plot(range(len(val_curve)), val_curve, color='darkorange',
+             linewidth=1.5, label='Zbiór walidacyjny')
+    ax.axvline(best_iter, color='green', linestyle='--', linewidth=1.3,
+               label=f'Early stopping (iteracja {best_iter})')
+
+    ax.set_title(f'Krzywa uczenia — {model_type.upper()}')
+    ax.set_xlabel('Iteracja (numer drzewa)')
+    ax.set_ylabel('RMSE')
+    ax.yaxis.set_major_formatter(FuncFormatter(_eur_formatter))
+    ax.legend(fontsize=9)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    path = f"{save_dir}/{model_type}_learning_curve_{timestamp}.png"
+    fig.savefig(path, bbox_inches='tight', dpi=150)
+    plt.close(fig)
+    print(f"Krzywa uczenia zapisana: {path}")
     return path

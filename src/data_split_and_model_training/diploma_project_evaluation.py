@@ -1,6 +1,6 @@
 """
-Model evaluation utilities.
-Location: /opt/airflow/src/diploma_project_evaluation.py
+Ewaluacja modelu
+Lokalizacja: /opt/airflow/src/diploma_project_evaluation.py
 """
 
 import numpy as np
@@ -9,9 +9,12 @@ import json
 from pathlib import Path
 from datetime import datetime
 
-def evaluate_and_save(model, X_val, y_val, X_test, y_test, X_train, model_type, params, cv_r2, hypertuning):
+def evaluate_and_save(model, X_val, y_val, X_test,
+                      y_test, X_train, model_type,
+                      params, cv_r2,
+                      hypertuning, early_stopping_info = None):
 
-    # We are using 4 metrics to measure accuracy of our model: r2, mae, mse, rmse
+    # Używane metryki do mierzenie precyzji modelu: r2, mae, rmse
     val_pred = model.predict(X_val)
     val_r2 = r2_score(y_val, val_pred)
     val_mae = mean_absolute_error(y_val, val_pred)
@@ -25,7 +28,7 @@ def evaluate_and_save(model, X_val, y_val, X_test, y_test, X_train, model_type, 
     print(f"Validation - R2: {val_r2:.4f} | MAE: {val_mae:.2f} | RMSE: {val_rmse:.2f}")
     print(f"Test - R2: {test_r2:.4f} | MAE: {test_mae:.2f} | RMSE: {test_rmse:.2f}")
 
-    # Listing 10 most important columns for each model
+    # Wylistowanie 10 najistotniejszych kolumn dla każdego modelu
     top_features = []
     if hasattr(model, 'feature_importances_'):
         importance = model.feature_importances_
@@ -41,6 +44,7 @@ def evaluate_and_save(model, X_val, y_val, X_test, y_test, X_train, model_type, 
         "hypertuning": hypertuning,
         "params": params,
         "cv_r2": float(cv_r2) if cv_r2 else None,
+        "early_stopping": early_stopping_info,
         "val": {
             "r2": float(val_r2),
             "mae": float(val_mae),
@@ -57,11 +61,12 @@ def evaluate_and_save(model, X_val, y_val, X_test, y_test, X_train, model_type, 
     with open(f"{model_dir}/{model_type}_metrics.json", 'w') as f:
         json.dump(metrics, f, indent=2)
 
-    _save_report(model_type, metrics, params, cv_r2, hypertuning)
+    _save_report(model_type, metrics, params, cv_r2, hypertuning, early_stopping_info)
     return metrics
 
-# Saving reports to evaluation_reports folder with current date
-def _save_report(model_type, metrics, params, cv_r2, hypertuning):
+# Zapisywanie raportów do folderu evaluation_reports
+def _save_report(model_type, metrics, params,
+                 cv_r2, hypertuning, early_stopping_info=None):
     report_dir = "/opt/airflow/reports/evaluation_reports"
     Path(report_dir).mkdir(parents=True, exist_ok=True)
 
@@ -77,6 +82,13 @@ def _save_report(model_type, metrics, params, cv_r2, hypertuning):
 
         if cv_r2:
             f.write(f"Cross-Validation R2: {cv_r2:.4f}\n\n")
+
+        if early_stopping_info:
+            f.write(f"Early stopping:\n")
+            f.write(f"  Zaplanowana liczba drzew:      {early_stopping_info['requested_rounds']}\n")
+            f.write(f"  Faktycznie wykorzystana:       {early_stopping_info['actual_rounds']}\n")
+            f.write(f"  Cierpliwość (patience_rounds): {early_stopping_info['patience_rounds']}\n")
+            f.write(f"  Zatrzymano wcześniej:          {'Tak' if early_stopping_info['stopped_early'] else 'Nie'}\n\n")
 
         f.write(f"Parameters:\n")
         for k, v in params.items():
