@@ -1,0 +1,33 @@
+Model evaluation report
+Model: RANDOMFOREST
+Timestamp: 2026-08-20 13:38:38
+Hyperparameter Tuning: No
+
+Parameters:
+  n_estimators: 300
+  max_depth: None
+  min_samples_split: 2
+  min_samples_leaf: 1
+  max_features: sqrt
+
+Validation set results:
+R2:   0.9197
+MAE:  8518.72
+RMSE: 24789.10
+
+Test set results:
+R2:   0.9300
+MAE:  8144.54
+RMSE: 22560.24
+
+Top 10 Features:
+   1. Horsepower
+   2. Mileage
+   3. Doors
+   4. Annual_Distance_Avg
+   5. Brand
+   6. Seats
+   7. Model
+   8. Year
+   9. Body
+  10. Gearbox

@@ -3,66 +3,70 @@ import pandas as pd
 import numpy as np
 import pickle
 import os
+import json
 import matplotlib.pyplot as plt
-import shap  # Wymaga instalacji: pip install shap
+import shap
+from pathlib import Path
 
 # Konfiguracja strony
 st.set_page_config(page_title="Wycena Samochodów Używanych", layout="wide")
 st.title("System predykcyjny do analizy i wyceny samochodów używanych na rynku europejskim")
 
-# -----------------------------------------------------------------------------
-# 1. ŁADOWANIE MODELU (Tylko LightGBM)
-# -----------------------------------------------------------------------------
-MODEL_DIR = "models"  # Możesz zmienić na /opt/airflow/models zależnie od środowiska
+# 1. Definicja ścieżek i ładowanie zasobów
+from pathlib import Path
+import os
+
+IN_DOCKER = os.path.exists("/app/models")
+
+if IN_DOCKER:
+    BASE_DIR = Path("/app")
+    MAPPINGS_FILE = BASE_DIR / "data" / "ml_splits" / "mappings.json"
+    MODEL_DIR = BASE_DIR / "models"
+else:
+    # Jeśli dany plik nie znajduje się w dockerze to przeszukiwane jest środowisko lokalne
+    SCRIPT_DIR = Path(__file__).parent.resolve()  # Katalog /streamlit
+    PROJECT_ROOT = SCRIPT_DIR.parent              # Katalog /Diploma_Project
+    MAPPINGS_FILE = PROJECT_ROOT / "data" / "ml_splits" / "mappings.json"
+    MODEL_DIR = PROJECT_ROOT / "models"
 
 st.sidebar.header("Informacje o modelu")
 st.sidebar.info("Aktualnie załadowany algorytm: **LightGBM**")
 
-
 @st.cache_resource
 def load_lgbm_model():
-    """Wczytuje zserializowany model LightGBM z pliku .pkl"""
-    model_path = os.path.join(MODEL_DIR, "lightgbm_model.pkl")
+    # Wczytuje model LightGBM z pliku .pkl
+    model_path = MODEL_DIR / "lightgbm_model.pkl"
     with open(model_path, "rb") as f:
         return pickle.load(f)
 
+@st.cache_data
+def load_mappings():
+    # Wczytuje automatycznie wygenerowane mapowania z pliku JSON
+    with open(MAPPINGS_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
 
+# Próba załadowania modelu i mapowań
 try:
     model = load_lgbm_model()
     st.sidebar.success("Model LightGBM załadowany i gotowy do predykcji.")
 except FileNotFoundError:
-    st.sidebar.error(f"Nie znaleziono pliku modelu w {MODEL_DIR}/lightgbm_model.pkl")
+    st.sidebar.error(f"Nie znaleziono pliku modelu w: {MODEL_DIR / 'lightgbm_model.pkl'}")
     st.stop()
 
-# -----------------------------------------------------------------------------
-# 2. MAPOWANIE ZMIENNYCH KATEGORYCZNYCH (KROK DO WYKONANIA)
-# -----------------------------------------------------------------------------
-# Zastąp przykładowe dane ("AUDI": 0) mapowaniami ze swojego zbioru treningowego.
-MAPPINGS = {
-    "Brand": {"AUDI": 0, "BMW": 1, "MERCEDES-BENZ": 2, "VOLVO": 3},
-    "Model": {"A4": 0, "M3": 1, "C-CLASS": 2},
-    "Body": {"Sedan": 0, "Kombi": 1, "SUV": 2},
-    "Country": {"Deutschland": 0, "Italy": 1, "France": 2},
-    "Condition": {"Used": 0, "New": 1},
-    "Fuel_Type": {"Benzin": 0, "Diesel": 1, "Electric": 2},
-    "Gearbox": {"Manual": 0, "Automatic": 1},
-    "Color": {"Black": 0, "White": 1, "Unknown": 2},
-    "Non_Smoker_Vehicle": {"No": 0, "Yes": 1},
-    "Seller": {"Dealer": 0, "Private": 1},
-    "Market_Segment": {"Standard": 0, "Premium": 1, "Luxury": 2},
-    "Classic_Vehicle": {"No": 0, "Yes": 1}
-}
+try:
+    MAPPINGS = load_mappings()
+except FileNotFoundError:
+    st.error(f"Nie znaleziono pliku z mapowaniami w:\n{MAPPINGS_FILE}")
+    st.stop()
 
-# -----------------------------------------------------------------------------
-# 3. INTERFEJS UŻYTKOWNIKA (WPROWADZANIE CECH)
-# -----------------------------------------------------------------------------
+# 2. Interfejs użytkownika (menu do wprowadzania cech)
 st.header("Wprowadź parametry pojazdu")
 
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    brand = st.selectbox("Marka (Brand)", list(MAPPINGS["Brand"].keys()))
-    model_car = st.selectbox("Model", list(MAPPINGS["Model"].keys()))
+    brand = st.text_input("Marka (Brand)", value="BMW").strip().upper()
+    model_car = st.text_input("Model", value="M4").strip().upper()
     body = st.selectbox("Typ nadwozia (Body)", list(MAPPINGS["Body"].keys()))
     country = st.selectbox("Kraj (Country)", list(MAPPINGS["Country"].keys()))
     market_segment = st.selectbox("Segment Rynku", list(MAPPINGS["Market_Segment"].keys()))
@@ -82,35 +86,48 @@ with col3:
     seats = st.number_input("Liczba miejsc (Seats)", min_value=1, max_value=9, value=5)
     vehicle_age = st.number_input("Wiek pojazdu (Vehicle_Age)", min_value=0, max_value=100, value=5)
     annual_distance = st.number_input("Szacowany roczny przebieg (Annual_Distance_Avg)", min_value=0.0, value=15000.0)
+    full_service = st.selectbox("Pełna historia serwisowa (Full_Service_History)", [True, False])
 
-# -----------------------------------------------------------------------------
-# 4. PRZYGOTOWANIE WEKTORA WEJŚCIOWEGO
-# -----------------------------------------------------------------------------
+# 3. Przygotowanie wektora wejściowego
+if brand not in MAPPINGS.get("Brand", {}):
+    st.warning(f"Marka '{brand}' nie występuje w bazie danych. Spróbuj wprowadzić jeszcze raz.")
+    st.stop()
+
+if model_car not in MAPPINGS.get("Model", {}):
+    st.warning(f"Model '{model_car}' nie występuje w bazie danych dla żadnej marki. Spróbuj wprowadzić jeszcze raz.")
+    st.stop()
+
 input_data = {
-    "Brand": MAPPINGS["Brand"][brand],
-    "Model": MAPPINGS["Model"][model_car],
-    "Condition": MAPPINGS["Condition"][condition],
-    "Body": MAPPINGS["Body"][body],
-    "Country": MAPPINGS["Country"][country],
-    "Fuel_Type": MAPPINGS["Fuel_Type"][fuel_type],
-    "Gearbox": MAPPINGS["Gearbox"][gearbox],
-    "Color": MAPPINGS["Color"][color],
-    "Non_Smoker_Vehicle": MAPPINGS["Non_Smoker_Vehicle"][non_smoker],
-    "Seller": MAPPINGS["Seller"][seller],
+    "Brand": brand,
+    "Model": model_car,
+    "Body": body,
+    "Country": country,
+    "Condition": condition,
+    "Fuel_Type": fuel_type,
+    "Gearbox": gearbox,
     "Horsepower": horsepower,
-    "Doors": doors,
     "Seats": seats,
-    "Market_Segment": MAPPINGS["Market_Segment"][market_segment],
-    "Classic_Vehicle": MAPPINGS["Classic_Vehicle"][classic],
+    "Doors": doors,
+    "Color": color,
+    "Full_Service_History": int(full_service),
+    "Non_Smoker_Vehicle": non_smoker,
+    "Seller": seller,
+    "Market_Segment": market_segment,
+    "Classic_Vehicle": classic,
     "Vehicle_Age": vehicle_age,
     "Annual_Distance_Avg": annual_distance
 }
 
 input_df = pd.DataFrame([input_data])
 
-# -----------------------------------------------------------------------------
-# 5. PREDYKCJA I WYJAŚNIALNOŚĆ (XAI)
-# -----------------------------------------------------------------------------
+# KRYTYCZNE: Zdefiniowanie kolumn kategorycznych i rzutowanie ich na typ 'category'
+categorical_cols = ['Brand', 'Model', 'Body', 'Country', 'Condition', 'Fuel_Type',
+                    'Gearbox', 'Color', 'Non_Smoker_Vehicle', 'Seller',
+                    'Market_Segment', 'Classic_Vehicle']
+
+input_df[categorical_cols] = input_df[categorical_cols].astype('category')
+
+# 4. Predykcja i rysowanie wykresów
 if st.button("Dokonaj wyceny", type="primary"):
 
     # Wykonanie predykcji za pomocą modelu LightGBM
@@ -142,8 +159,8 @@ if st.button("Dokonaj wyceny", type="primary"):
 
     # Wykres 2: Lokalna ważność cech (SHAP)
     with col_plot2:
-        st.write("**Co wpłynęło na tę konkretną wycenę? (Wartości SHAP)**")
-        with st.spinner("Generowanie wykresu SHAP..."):
+        st.write("**Szczegółowa ważność cech (Wartości SHAP)**")
+        with st.spinner("Generowanie wykresu SHAP."):
             try:
                 explainer = shap.TreeExplainer(model)
                 shap_values = explainer.shap_values(input_df)

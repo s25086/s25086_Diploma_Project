@@ -1,0 +1,42 @@
+Model evaluation report
+Model: LIGHTGBM
+Timestamp: 2026-08-20 11:36:13
+Hyperparameter Tuning: No
+
+Early stopping:
+  Zaplanowana liczba drzew: 100
+  Faktycznie wykorzystana: 97
+  Cierpliwość (patience_rounds): 1000
+  Zatrzymano wcześniej: Tak
+
+Parameters:
+  n_estimators: 100
+  max_depth: -1
+  learning_rate: 0.1
+  num_leaves: 31
+  subsample: 1
+  colsample_bytree: 1
+  reg_alpha: 0
+  reg_lambda: 0
+
+Validation set results:
+R2:   0.9528
+MAE:  6918.03
+RMSE: 18997.09
+
+Test set results:
+R2:   0.9527
+MAE:  6863.73
+RMSE: 18555.51
+
+Top 10 Features:
+   1. Horsepower
+   2. Vehicle_Age
+   3. Annual_Distance_Avg
+   4. Model
+   5. Brand
+   6. Country
+   7. Doors
+   8. Seats
+   9. Color
+  10. Gearbox

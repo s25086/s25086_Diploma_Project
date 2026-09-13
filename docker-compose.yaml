@@ -349,6 +349,7 @@ services:
     volumes:
       - ${AIRFLOW_PROJ_DIR:-.}/reports:/app/reports
       - ${AIRFLOW_PROJ_DIR:-.}/models:/app/models
+      - ${AIRFLOW_PROJ_DIR:-.}/data:/app/data
     restart: always
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8501/_stcore/health"]

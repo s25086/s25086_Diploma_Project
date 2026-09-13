@@ -1,7 +1,5 @@
 """
-This module contains all the business logic for the learning of diploma project data pipeline.
-Each function is a self-contained task that can be called by the Airflow DAG.
-
+Uczenie modeli, grid search, early stopping
 Location: /opt/airflow/src/diploma_project_ml_tasks.py
 """
 
@@ -14,6 +12,7 @@ from xgboost import XGBRegressor
 from catboost import CatBoostRegressor
 from lightgbm import LGBMRegressor
 import lightgbm as lgb
+import json
 
 from diploma_project_evaluation import evaluate_and_save
 from diploma_project_plots import plot_prediction_analysis, plot_learning_curve
@@ -28,30 +27,30 @@ DEFAULT_PARAMS = {
         "max_features":      "sqrt",
     },
     "xgboost": {
-        "n_estimators":    1000,
+        "n_estimators":    300,
         "max_depth":       6,
         "learning_rate":   0.1,
-        "subsample":       0.8,
-        "colsample_bytree": 0.8,
-        "reg_alpha":       0.1,
+        "subsample":       0.9,
+        "colsample_bytree": 0.7,
+        "reg_alpha":       0.0,
         "reg_lambda":      1.0,
     },
     "catboost": {
-        "iterations":    1000,
-        "depth":         6,
-        "learning_rate": 0.03,
-        "l2_leaf_reg":   3,
+        "iterations":    600,
+        "depth":         8,
+        "learning_rate": 0.1,
+        "l2_leaf_reg":   1,
         "subsample":     0.8,
     },
     "lightgbm": {
-        "n_estimators":    1000,
-        "max_depth":       10,
+        "n_estimators":    500,
+        "max_depth":       -1,
         "learning_rate":   0.05,
-        "num_leaves":      31,
-        "subsample":       0.8,
-        "colsample_bytree": 0.8,
-        "reg_alpha":       0.1,
-        "reg_lambda":      0.1,
+        "num_leaves":      63,
+        "subsample":       0.7,
+        "colsample_bytree": 0.7,
+        "reg_alpha":       0,
+        "reg_lambda":      0,
     },
 }
 
@@ -94,13 +93,15 @@ GRID_SEARCH_PARAMS = {
 
 # Early stopping: liczba kolejnych drzew/iteracji bez poprawy wyniku na zbiorze walidacyjnym,
 # po której trening jest przerywany.
-EARLY_STOPPING_ROUNDS = 50
+EARLY_STOPPING_ROUNDS = 10
 
 # Early stopping tylko dla drzew budowanych iteracyjnie, w random forest drzewa budowane
 # są niezależnie od siebie
 BOOSTING_MODELS = {"xgboost", "catboost", "lightgbm"}
 
-
+CATEGORICAL_COLS = ['Brand', 'Model', 'Body', 'Country', 'Condition', 'Fuel_Type',
+                    'Gearbox', 'Color', 'Non_Smoker_Vehicle', 'Seller',
+                    'Market_Segment', 'Classic_Vehicle']
 
 # Implementacja wyszukiwania grid search dla każdego z modeli,
 # w celu polepszenia zdolności przewidywania każdego z modeli
@@ -109,7 +110,7 @@ def optimize_hyperparameters(X_train, y_train, model_type):
 
     model_classes = {
         "randomforest": RandomForestRegressor(random_state=42),
-        "xgboost": XGBRegressor(random_state=42),
+        "xgboost": XGBRegressor(random_state=42, enable_categorical=True),
         "catboost": CatBoostRegressor(random_state=42, verbose=0),
         "lightgbm": LGBMRegressor(random_state=42, verbose=-1),
     }
@@ -121,48 +122,54 @@ def optimize_hyperparameters(X_train, y_train, model_type):
         estimator=model_classes[model_type],
         param_grid=GRID_SEARCH_PARAMS[model_type],
         cv=5,
-        scoring="r2",
+        scoring='r2',
         verbose=2,
-        n_jobs=-1,
+        n_jobs=1,
     )
 
-    grid_search.fit(X_train, y_train)
+    fit_params = {}
+    if model_type == "catboost":
+        fit_params["cat_features"] = CATEGORICAL_COLS
+
+    grid_search.fit(X_train, y_train, **fit_params)
     print(f"Best params: {grid_search.best_params_}")
     print(f"Best CV R2:  {grid_search.best_score_:.4f}")
 
     return grid_search.best_params_, grid_search.best_score_
 
 def build_and_fit_model(model_type, params, X_train, y_train, X_val=None, y_val=None):
-    # Sprawdzenie czy zbiór walidacyjny istnieje
     use_early_stopping = (
             model_type in BOOSTING_MODELS and X_val is not None and y_val is not None
     )
 
     if model_type == "randomforest":
         model = RandomForestRegressor(**params, random_state=42)
+
     elif model_type == "xgboost":
         model = XGBRegressor(
             **params,
             random_state=42,
+            enable_categorical=True,
+            tree_method="hist",
             early_stopping_rounds=EARLY_STOPPING_ROUNDS if use_early_stopping else None,
             eval_metric="rmse",
         )
     elif model_type == "catboost":
         model = CatBoostRegressor(**params, random_state=42, verbose=0)
+
     elif model_type == "lightgbm":
         model = LGBMRegressor(**params, random_state=42, verbose=-1)
-
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
 
     fit_kwargs = {}
 
+    # Konfiguracja argumentów early stopping oraz przekazanie kategorii dla CatBoost
+    if model_type == "catboost":
+        fit_kwargs["cat_features"] = CATEGORICAL_COLS
+
     if use_early_stopping:
         if model_type == "xgboost":
-            # Ostatni zbiór podany w eval_set jest tym, na podstawie którego
-            # XGBoost decyduje o zatrzymaniu treningu - zbiór treningowy dołączamy
-            # tylko po to, by później narysować krzywą uczenia (train vs val),
-            # zbiór walidacyjny musi zostać ostatni.
             fit_kwargs["eval_set"] = [(X_train, y_train), (X_val, y_val)]
             fit_kwargs["verbose"] = False
         elif model_type == "catboost":
@@ -179,8 +186,7 @@ def build_and_fit_model(model_type, params, X_train, y_train, X_val=None, y_val=
 
 def get_early_stopping_summary(model, model_type, params):
     # Zwraca ile drzew faktycznie wykorzystano w porównaniu do zaplanowanej
-    # maksymalnej liczby (n_estimators / iterations). Przydatne do opisania
-    # efektu early stopping w rozdziale 1.6/1.7 pracy.
+    # maksymalnej liczby (n_estimators / iterations).
     if model_type not in BOOSTING_MODELS:
         return None
 
@@ -212,15 +218,37 @@ def get_early_stopping_summary(model, model_type, params):
 
 # Trening i zapis wyników modeli
 def train_model(data_dir, model_type="randomforest", use_tuning=False):
-
     print(f"\nTraining {model_type} (Tuning: {use_tuning})")
 
-    X_train = pd.read_csv(f"{data_dir}/train_x.csv")
+    # 1. Dynamiczny dobór przyrostka na podstawie modelu
+    suffix_x = "_encoded.csv" if model_type == "randomforest" else "_raw.csv"
+
+    # Wczytanie plików z odpowiednim sufiksem
+    X_train = pd.read_csv(f"{data_dir}/train_x{suffix_x}")
     y_train = pd.read_csv(f"{data_dir}/train_y.csv").values.flatten()
-    X_val = pd.read_csv(f"{data_dir}/val_x.csv")
+    X_val = pd.read_csv(f"{data_dir}/val_x{suffix_x}")
     y_val = pd.read_csv(f"{data_dir}/val_y.csv").values.flatten()
-    X_test = pd.read_csv(f"{data_dir}/test_x.csv")
+    X_test = pd.read_csv(f"{data_dir}/test_x{suffix_x}")
     y_test = pd.read_csv(f"{data_dir}/test_y.csv").values.flatten()
+
+    with open(f"{data_dir}/mappings.json") as f:
+        mappings = json.load(f)
+
+    # 2. Przygotowanie typów kolumn (Kluczowe dla Boostingu)
+    if model_type in ["lightgbm", "xgboost"]:
+        # LightGBM i XGBoost potrzebują typu 'category'
+        for col in CATEGORICAL_COLS:
+            cat_dtype = pd.CategoricalDtype(categories=list(mappings[col].keys()))
+            X_train[col] = X_train[col].astype(str).astype(cat_dtype)
+            X_val[col] = X_val[col].astype(str).astype(cat_dtype)
+            X_test[col] = X_test[col].astype(str).astype(cat_dtype)
+
+    elif model_type == "catboost":
+        # CatBoost preferuje by wartości były jawnie typem string
+        for col in CATEGORICAL_COLS:
+            X_train[col] = X_train[col].astype(str)
+            X_val[col] = X_val[col].astype(str)
+            X_test[col] = X_test[col].astype(str)
 
     cv_r2 = None
 
@@ -252,7 +280,6 @@ def train_model(data_dir, model_type="randomforest", use_tuning=False):
                       model_type, params,
                       cv_r2, use_tuning,
                       early_stopping_info=early_stopping_info)
-
 
     model_dir = "/opt/airflow/models"
     Path(model_dir).mkdir(parents=True, exist_ok=True)

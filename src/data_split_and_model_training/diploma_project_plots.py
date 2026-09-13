@@ -1,10 +1,12 @@
+"""
+Rysowanie wykresów dla modeli po utworzeniu
+Location: /opt/airflow/src/diploma_project_plots.py
+"""
 
 import numpy as np
-from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+from sklearn.metrics import r2_score
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
 from matplotlib.ticker import FuncFormatter
-
 from pathlib import Path
 from datetime import datetime
 
@@ -15,51 +17,50 @@ def _eur_formatter(x, pos):
         return f"{x / 1_000:.0f}k"
     return f"{x:.0f}"
 
-
 def plot_prediction_analysis(model, X_test, y_test, model_type,
                              save_dir="/opt/airflow/reports/evaluation_reports"):
     # Funkcja do rysowania wykresów do mierzenia precyzyjności modeli
-    # Wykresy znajdują się w evaluation_report
-
+    # Wykresy zapisywane są jako dwa oddzielne pliki
     y_pred = model.predict(X_test)
     y_true = np.array(y_test)
 
     Path(save_dir).mkdir(parents=True, exist_ok=True)
-
-    fig = plt.figure(figsize=(14, 6))
-    gs = gridspec.GridSpec(1, 2, figure=fig, wspace=0.35)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    saved_paths = []
 
     # Wykres 1: Predicted vs Actual
-    ax1 = fig.add_subplot(gs[0])
+    fig1, ax1 = plt.subplots(figsize=(8, 6))
 
     ax1.scatter(y_true, y_pred, alpha=0.25, s=8, color='steelblue',
                 label='Predykcje', rasterized=True)
 
-    # Linia idealna, gdzie powinny leżeć punkty
     min_val = min(float(np.min(y_true)), float(np.min(y_pred)))
     max_val = max(float(np.max(y_true)), float(np.max(y_pred)))
     ax1.plot([min_val, max_val], [min_val, max_val],
              color='red', linewidth=1.8, linestyle='--', label='Idealna predykcja (y=x)')
 
-    # Linia trendu modelu, gdzie faktycznie leżą predykcje
-    # Odchylenie od czerwonej = systematyczny błąd modelu
     z = np.polyfit(y_true, y_pred, 1)
     p = np.poly1d(z)
     x_line = np.linspace(min_val, max_val, 300)
-    ax1.plot(x_line, p(x_line),color='darkorange',
+    ax1.plot(x_line, p(x_line), color='darkorange',
              linewidth=1.6, linestyle='-',
              label=f'Rzeczywisty trend modelu\n(slope={z[0]:.2f})')
 
     r2 = r2_score(y_true, y_pred)
-    ax1.set_title(f'Predicted vs Actual — {model_type.upper()}\nR² = {r2:.4f}')
+    ax1.set_title(f'Predicted vs Actual - {model_type.upper()}\nR² = {r2:.4f}')
     ax1.set_xlabel('Rzeczywista cena')
     ax1.set_ylabel('Predykcja')
     ax1.xaxis.set_major_formatter(FuncFormatter(_eur_formatter))
     ax1.yaxis.set_major_formatter(FuncFormatter(_eur_formatter))
-    ax1.legend(fontsize=8)
+    ax1.legend(fontsize=9)
 
-    # Wykres 2: Percentile error vs Actual price
-    ax2 = fig.add_subplot(gs[1])
+    path1 = f"{save_dir}/{model_type}_pred_vs_actual_{timestamp}.png"
+    fig1.savefig(path1, bbox_inches='tight', dpi=150)
+    plt.close(fig1)
+    saved_paths.append(path1)
+
+    # Wykres 2: Przewidywalna wartość vs Faktyczna cena
+    fig2, ax2 = plt.subplots(figsize=(8, 6))
 
     err_pct = ((y_pred - y_true) / y_true) * 100
 
@@ -73,24 +74,22 @@ def plot_prediction_analysis(model, X_test, y_test, model_type,
                 label=f'Mediana: {median_err:+.1f}%')
 
     within_20 = np.mean(np.abs(err_pct) <= 20) * 100
-    ax2.set_title(f'Błąd predykcji vs cena rzeczywista\n{within_20:.1f}% predykcji w +-20%')
+    ax2.set_title(f'Błąd predykcji vs cena rzeczywista — {model_type.upper()}\n{within_20:.1f}% predykcji w +-20%')
     ax2.set_xlabel('Rzeczywista cena')
     ax2.set_ylabel('Błąd predykcji w %')
     ax2.set_ylim(-100, 100)
     ax2.xaxis.set_major_formatter(FuncFormatter(_eur_formatter))
-    ax2.legend(fontsize=8)
+    ax2.legend(fontsize=9)
 
-    plt.suptitle(f'Analiza predykcji: {model_type.upper()}', fontsize=13, y=1.01)
+    path2 = f"{save_dir}/{model_type}_error_vs_actual_{timestamp}.png"
+    fig2.savefig(path2, bbox_inches='tight', dpi=150)
+    plt.close(fig2)
+    saved_paths.append(path2)
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    path = f"{save_dir}/{model_type}_prediction_analysis_{timestamp}.png"
-    fig.savefig(path, bbox_inches='tight', dpi=150)
-    plt.close(fig)
-    print(f"Wykres zapisany: {path}")
-    return path
+    print(f"Wykresy zapisane:\n  1. {path1}\n  2. {path2}")
+    return tuple(saved_paths)
 
-# Wyciąganie historii błędu (per iteracja) zapisanej wewnątrz obiektu modelu
-# przez każdą z bibliotek, CZYLI każda robi to nieco inaczej stąd osobne lambdy.
+# Funkcje krzywej uczenia
 _LEARNING_CURVE_EXTRACTORS = {
     "xgboost":  lambda m: (m.evals_result()['validation_0']['rmse'],
                             m.evals_result()['validation_1']['rmse']),
@@ -101,19 +100,11 @@ _LEARNING_CURVE_EXTRACTORS = {
 }
 
 def plot_learning_curve(model, model_type, save_dir="/opt/airflow/reports/evaluation_reports"):
-    # Krzywa uczenia: błąd (RMSE) na zbiorze treningowym i walidacyjnym
-    # w kolejnych iteracjach boostingu, z zaznaczonym punktem early stopping.
-    # Dotyczy wyłącznie modeli boostingowych (xgboost, catboost, lightgbm) -
-    # Random Forest nie trenuje się iteracyjnie, więc taka krzywa nie ma sensu.
     extractor = _LEARNING_CURVE_EXTRACTORS.get(model_type)
     if extractor is None:
         return None
 
     train_curve, val_curve = extractor(model)
-    # Minimum liczymy bezpośrednio z krzywej walidacyjnej, niezależnie od
-    # konwencji indeksowania danej biblioteki (część z nich liczy od 0,
-    # część już podaje liczbę drzew) - dzięki temu punkt na wykresie
-    # zawsze trafia we właściwe miejsce.
     best_iter = int(np.argmin(val_curve))
 
     Path(save_dir).mkdir(parents=True, exist_ok=True)

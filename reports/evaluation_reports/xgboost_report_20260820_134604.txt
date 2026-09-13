@@ -1,0 +1,41 @@
+Model evaluation report
+Model: XGBOOST
+Timestamp: 2026-08-20 13:46:04
+Hyperparameter Tuning: No
+
+Early stopping:
+  Zaplanowana liczba drzew: 300
+  Faktycznie wykorzystana: 287
+  Cierpliwość (patience_rounds): 1000
+  Zatrzymano wcześniej: Tak
+
+Parameters:
+  n_estimators: 300
+  max_depth: 6
+  learning_rate: 0.1
+  subsample: 0.9
+  colsample_bytree: 0.7
+  reg_alpha: 0.0
+  reg_lambda: 1.0
+
+Validation set results:
+R2:   0.9523
+MAE:  6395.12
+RMSE: 19111.79
+
+Test set results:
+R2:   0.9563
+MAE:  6330.51
+RMSE: 17829.59
+
+Top 10 Features:
+   1. Model
+   2. Horsepower
+   3. Brand
+   4. Mileage
+   5. Condition
+   6. Year
+   7. Gearbox
+   8. Fuel_Type
+   9. Annual_Distance_Avg
+  10. Body

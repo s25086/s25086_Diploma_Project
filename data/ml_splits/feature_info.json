@@ -1,0 +1,23 @@
+{
+    "n_features": 18,
+    "feature_names": [
+        "Brand",
+        "Model",
+        "Body",
+        "Country",
+        "Condition",
+        "Fuel_Type",
+        "Gearbox",
+        "Horsepower",
+        "Seats",
+        "Doors",
+        "Color",
+        "Full_Service_History",
+        "Non_Smoker_Vehicle",
+        "Seller",
+        "Vehicle_Age",
+        "Annual_Distance_Avg",
+        "Market_Segment",
+        "Classic_Vehicle"
+    ]
+}
